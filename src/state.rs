@@ -1,4 +1,7 @@
+use wgpu::{util::DeviceExt};
 use winit::{event::WindowEvent, window::Window};
+
+use crate::vertex::{VERTICES, Vertex};
 
 #[derive(Debug)]
 pub struct State {
@@ -8,6 +11,8 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
+    render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -50,7 +55,62 @@ impl State {
         surface.configure(&device, &config);
 
         let clear_color = wgpu::Color::BLACK;
-
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                push_constant_ranges: &[],
+                bind_group_layouts: &[],
+            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vertex_main",
+                buffers: &[
+                    Vertex::desc(),
+                ],        
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fragment_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList, 
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: None, 
+            multisample: wgpu::MultisampleState {
+                count: 1,                        
+                mask: !0,                         
+                alpha_to_coverage_enabled: false, 
+            },
+            multiview: None, 
+        });
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
         Self {
             surface,
             device,
@@ -58,6 +118,8 @@ impl State {
             config,
             size,
             clear_color,
+            render_pipeline,
+            vertex_buffer,
         }
     }
 
@@ -71,7 +133,7 @@ impl State {
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        if let WindowEvent::CursorMoved {position, ..} = event {
+        if let WindowEvent::CursorMoved { position, .. } = event {
             println!("Capturing mouse events");
             println!("Red {}", position.x as f64 / self.size.width as f64);
             println!("Green {}", position.y as f64 / self.size.height as f64);
@@ -81,7 +143,7 @@ impl State {
                 b: 1.0,
                 a: 1.0,
             };
-           return true;
+            return true;
         }
         false
     }
@@ -99,20 +161,22 @@ impl State {
                 label: Some("Command Enconder"),
             });
         {
-            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+       
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(self.clear_color),
                         store: true,
                     },
-                 }),
-                ],
+                })],
                 depth_stencil_attachment: None,
             });
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..VERTICES.len() as u32, 0..1);
         }
 
         // submit will accept anything that implements IntoIter

@@ -6,7 +6,7 @@ use winit::{
 };
 
 mod state;
-
+mod vertex;
 const MIN_WINDOW_SIZE: PhysicalSize<i32> = PhysicalSize::new(400, 400);
 
 fn main() {
