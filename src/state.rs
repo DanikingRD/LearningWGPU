@@ -1,7 +1,12 @@
-use wgpu::{util::DeviceExt};
-use winit::{event::WindowEvent, window::Window};
+use wgpu::util::DeviceExt;
+use winit::{
+    event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent},
+    window::Window,
+};
 
-use crate::vertex::{VERTICES, Vertex};
+use crate::vertex::{
+    RenderShape, Vertex, OCTAGON_INDICES, OCTAGON_VERTICES, SQUARE_INDICES, SQUARE_VERTICES,
+};
 
 #[derive(Debug)]
 pub struct State {
@@ -12,7 +17,11 @@ pub struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
+    octagon_vertex_buffer: wgpu::Buffer,
+    octagon_index_buffer: wgpu::Buffer,
+    square_vertex_buffer: wgpu::Buffer,
+    square_index_buffer: wgpu::Buffer,
+    shape: RenderShape,
 }
 
 impl State {
@@ -71,9 +80,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vertex_main",
-                buffers: &[
-                    Vertex::desc(),
-                ],        
+                buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -85,7 +92,7 @@ impl State {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, 
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
@@ -96,21 +103,37 @@ impl State {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None, 
+            depth_stencil: None,
             multisample: wgpu::MultisampleState {
-                count: 1,                        
-                mask: !0,                         
-                alpha_to_coverage_enabled: false, 
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
             },
-            multiview: None, 
+            multiview: None,
         });
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
+
+        let octagon_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Octagon Vertex Buffer"),
+            contents: bytemuck::cast_slice(OCTAGON_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let octagon_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Octagon Index Buffer"),
+            contents: bytemuck::cast_slice(OCTAGON_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let square_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Square Vertex Buffer"),
+            contents: bytemuck::cast_slice(SQUARE_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let square_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Square Index Buffer"),
+            contents: bytemuck::cast_slice(SQUARE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let shape = RenderShape::OCTAGON;
         Self {
             surface,
             device,
@@ -119,7 +142,11 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            vertex_buffer,
+            octagon_vertex_buffer,
+            octagon_index_buffer,
+            square_vertex_buffer,
+            square_index_buffer,
+            shape,
         }
     }
 
@@ -145,6 +172,21 @@ impl State {
             };
             return true;
         }
+        if let WindowEvent::KeyboardInput {
+            input:
+                KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(VirtualKeyCode::Space),
+                    ..
+                },
+            ..
+        } = event
+        {
+            self.shape = match self.shape {
+                RenderShape::OCTAGON => RenderShape::SQUARE,
+                RenderShape::SQUARE => RenderShape::OCTAGON,
+            };
+        }
         false
     }
 
@@ -161,7 +203,6 @@ impl State {
                 label: Some("Command Enconder"),
             });
         {
-       
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -174,9 +215,26 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
             });
+
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..VERTICES.len() as u32, 0..1);
+            match self.shape {
+                RenderShape::OCTAGON => {
+                    render_pass.set_vertex_buffer(0, self.octagon_vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(
+                        self.octagon_index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                    render_pass.draw_indexed(0..OCTAGON_INDICES.len() as u32, 0, 0..1);
+                }
+                RenderShape::SQUARE => {
+                    render_pass.set_vertex_buffer(0, self.square_vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(
+                        self.square_index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                    render_pass.draw_indexed(0..SQUARE_INDICES.len() as u32, 0, 0..1);
+                }
+            }
         }
 
         // submit will accept anything that implements IntoIter
