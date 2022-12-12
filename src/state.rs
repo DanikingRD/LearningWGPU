@@ -1,3 +1,4 @@
+use image::GenericImageView;
 use wgpu::util::DeviceExt;
 use winit::{
     event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -22,6 +23,7 @@ pub struct State {
     square_vertex_buffer: wgpu::Buffer,
     square_index_buffer: wgpu::Buffer,
     shape: RenderShape,
+    diffuse_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -62,6 +64,52 @@ impl State {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
         surface.configure(&device, &config);
+        // Load image from asset
+        let image_bytes = include_bytes!("../assets/tree.png");
+        let texture =
+            crate::texture::Texture::from_bytes(&device, &queue, image_bytes, "tree.png").unwrap();
+        let diffuse_texture_view = &texture.view;
+        let diffuse_sampler = &texture.sampler;
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
 
         let clear_color = wgpu::Color::BLACK;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -72,7 +120,7 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 push_constant_ranges: &[],
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&texture_bind_group_layout],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -147,6 +195,7 @@ impl State {
             square_vertex_buffer,
             square_index_buffer,
             shape,
+            diffuse_bind_group,
         }
     }
 
@@ -217,6 +266,7 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             match self.shape {
                 RenderShape::OCTAGON => {
                     render_pass.set_vertex_buffer(0, self.octagon_vertex_buffer.slice(..));
