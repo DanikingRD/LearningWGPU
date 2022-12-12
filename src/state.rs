@@ -5,8 +5,9 @@ use winit::{
     window::Window,
 };
 
-use crate::vertex::{
-    RenderShape, Vertex, OCTAGON_INDICES, OCTAGON_VERTICES, SQUARE_INDICES, SQUARE_VERTICES,
+use crate::{
+    texture,
+    vertex::{TextureLoad, Vertex, SQUARE_INDICES, SQUARE_VERTICES},
 };
 
 #[derive(Debug)]
@@ -18,12 +19,13 @@ pub struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
-    octagon_vertex_buffer: wgpu::Buffer,
-    octagon_index_buffer: wgpu::Buffer,
     square_vertex_buffer: wgpu::Buffer,
     square_index_buffer: wgpu::Buffer,
-    shape: RenderShape,
-    diffuse_bind_group: wgpu::BindGroup,
+    tree_bind_group: wgpu::BindGroup,
+    tree_texture: texture::Texture,
+    dirt_bind_group: wgpu::BindGroup,
+    dirt_texture: texture::Texture,
+    texture_load: TextureLoad,
 }
 
 impl State {
@@ -52,8 +54,6 @@ impl State {
             )
             .await
             .unwrap();
-        //  println!("{:?}", &adapter.features());
-        //  println!("{:?}", &surface.get_supported_formats(&adapter));
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -64,12 +64,22 @@ impl State {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
         surface.configure(&device, &config);
+
         // Load image from asset
-        let image_bytes = include_bytes!("../assets/tree.png");
-        let texture =
-            crate::texture::Texture::from_bytes(&device, &queue, image_bytes, "tree.png").unwrap();
-        let diffuse_texture_view = &texture.view;
-        let diffuse_sampler = &texture.sampler;
+        let tree_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            include_bytes!("../assets/tree.png"),
+            "tree.png",
+        )
+        .unwrap();
+        let dirt_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            include_bytes!("../assets/dirt.png"),
+            "dirt.png",
+        )
+        .unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -96,19 +106,34 @@ impl State {
                 label: Some("texture_bind_group_layout"),
             });
 
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let tree_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&tree_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                    resource: wgpu::BindingResource::Sampler(&tree_texture.sampler),
                 },
             ],
-            label: Some("diffuse_bind_group"),
+            label: Some("tree_bind_group"),
+        });
+
+        let dirt_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&dirt_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&dirt_texture.sampler),
+                },
+            ],
+            label: Some("dirt_bind_group"),
         });
 
         let clear_color = wgpu::Color::BLACK;
@@ -160,17 +185,6 @@ impl State {
             multiview: None,
         });
 
-        let octagon_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Octagon Vertex Buffer"),
-            contents: bytemuck::cast_slice(OCTAGON_VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let octagon_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Octagon Index Buffer"),
-            contents: bytemuck::cast_slice(OCTAGON_INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
         let square_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Square Vertex Buffer"),
             contents: bytemuck::cast_slice(SQUARE_VERTICES),
@@ -181,7 +195,7 @@ impl State {
             contents: bytemuck::cast_slice(SQUARE_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let shape = RenderShape::OCTAGON;
+        let texture_load = TextureLoad::TREE;
         Self {
             surface,
             device,
@@ -190,12 +204,13 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            octagon_vertex_buffer,
-            octagon_index_buffer,
             square_vertex_buffer,
             square_index_buffer,
-            shape,
-            diffuse_bind_group,
+            tree_bind_group,
+            dirt_bind_group,
+            texture_load,
+            tree_texture,
+            dirt_texture,
         }
     }
 
@@ -231,9 +246,9 @@ impl State {
             ..
         } = event
         {
-            self.shape = match self.shape {
-                RenderShape::OCTAGON => RenderShape::SQUARE,
-                RenderShape::SQUARE => RenderShape::OCTAGON,
+            self.texture_load = match self.texture_load {
+                TextureLoad::TREE => TextureLoad::DIRT,
+                TextureLoad::DIRT => TextureLoad::TREE,
             };
         }
         false
@@ -266,25 +281,21 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            match self.shape {
-                RenderShape::OCTAGON => {
-                    render_pass.set_vertex_buffer(0, self.octagon_vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(
-                        self.octagon_index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint16,
-                    );
-                    render_pass.draw_indexed(0..OCTAGON_INDICES.len() as u32, 0, 0..1);
+
+            match self.texture_load {
+                TextureLoad::TREE => {
+                    render_pass.set_bind_group(0, &self.tree_bind_group, &[]);
                 }
-                RenderShape::SQUARE => {
-                    render_pass.set_vertex_buffer(0, self.square_vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(
-                        self.square_index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint16,
-                    );
-                    render_pass.draw_indexed(0..SQUARE_INDICES.len() as u32, 0, 0..1);
+                TextureLoad::DIRT => {
+                    render_pass.set_bind_group(0, &self.dirt_bind_group, &[]);
                 }
             }
+            render_pass.set_vertex_buffer(0, self.square_vertex_buffer.slice(..));
+            render_pass.set_index_buffer(
+                self.square_index_buffer.slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(0..SQUARE_INDICES.len() as u32, 0, 0..1);
         }
 
         // submit will accept anything that implements IntoIter

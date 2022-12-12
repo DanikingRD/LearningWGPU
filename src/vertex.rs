@@ -25,44 +25,6 @@ impl Vertex {
         }
     }
 }
-pub const OCTAGON_VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [0.0, 0.0, 0.0], // 0
-        uv: [1.0, 0.0],
-    }, // A  10
-    Vertex {
-        position: [-0.5, -0.5, 0.0], // 1
-        uv: [0.0, 1.0],
-    }, // B
-    Vertex {
-        position: [0.0, -1.0, 0.0], // 2
-        uv: [0.0, 0.0],
-    }, // C
-    Vertex {
-        position: [-1.0, 0.0, 0.0], // 3
-        uv: [0.0, 0.0],
-    }, // C
-    Vertex {
-        position: [-0.5, 0.5, 0.0],
-        uv: [0.0, 0.0],
-    }, // C
-    Vertex {
-        position: [0.0, 1.0, 0.0],
-        uv: [0.0, 0.0],
-    }, // C
-    Vertex {
-        position: [0.5, 0.5, 0.0],
-        uv: [0.0, 0.0],
-    }, // C
-    Vertex {
-        position: [1.0, 0.0, 0.0],
-        uv: [0.0, 0.0],
-    }, // C
-    Vertex {
-        position: [0.5, -0.5, 0.0],
-        uv: [0.0, 0.0],
-    }, // C
-];
 pub const SQUARE_VERTICES: &[Vertex] = &[
     Vertex {
         position: [-0.8, 0.8, 0.0], // top right
@@ -84,12 +46,9 @@ pub const SQUARE_VERTICES: &[Vertex] = &[
     }, // bottom left
 ];
 pub const SQUARE_INDICES: &[u16] = &[1, 0, 3, 3, 2, 1];
-pub const OCTAGON_INDICES: &[u16] = &[
-    0, 1, 2, 0, 3, 1, 0, 4, 3, 0, 5, 4, 6, 5, 0, 7, 6, 0, 7, 0, 2,
-];
 
 #[derive(Debug)]
-pub enum RenderShape {
-    OCTAGON = 0,
-    SQUARE = 1,
+pub enum TextureLoad {
+    TREE,
+    DIRT,
 }

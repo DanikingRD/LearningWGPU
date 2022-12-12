@@ -5,9 +5,11 @@ use winit::{
     window::WindowBuilder,
 };
 
+mod camera;
 mod state;
 mod texture;
 mod vertex;
+
 const MIN_WINDOW_SIZE: PhysicalSize<i32> = PhysicalSize::new(400, 400);
 
 fn main() {
