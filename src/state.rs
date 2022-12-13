@@ -1,3 +1,4 @@
+use cgmath::SquareMatrix;
 use image::GenericImageView;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -6,11 +7,11 @@ use winit::{
 };
 
 use crate::{
+    camera::{Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX},
     texture,
     vertex::{TextureLoad, Vertex, SQUARE_INDICES, SQUARE_VERTICES},
 };
 
-#[derive(Debug)]
 pub struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -26,6 +27,10 @@ pub struct State {
     dirt_bind_group: wgpu::BindGroup,
     dirt_texture: texture::Texture,
     texture_load: TextureLoad,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    camera_uniform: CameraUniform,
+    camera: Camera,
 }
 
 impl State {
@@ -135,6 +140,39 @@ impl State {
             ],
             label: Some("dirt_bind_group"),
         });
+        let move_right = cgmath::vec3(-100, 0, 0);
+        let camera = Camera::new(cgmath::point3(0.0, 0.0, 0.0));
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera, &window);
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
 
         let clear_color = wgpu::Color::BLACK;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -145,7 +183,7 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 push_constant_ranges: &[],
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -211,6 +249,10 @@ impl State {
             texture_load,
             tree_texture,
             dirt_texture,
+            camera_bind_group,
+            camera_buffer,
+            camera_uniform,
+            camera,
         }
     }
 
@@ -254,7 +296,17 @@ impl State {
         false
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self, window: &Window) {
+        let w_aspect_ratio = (self.get_size().width as f32) / 100.0;
+        let h_aspect_ratio = (self.get_size().height as f32) / 100.0;
+     
+        self.camera_uniform.update_view_proj(&self.camera, window);
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let surface = self.surface.get_current_texture()?;
@@ -290,6 +342,7 @@ impl State {
                     render_pass.set_bind_group(0, &self.dirt_bind_group, &[]);
                 }
             }
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.square_vertex_buffer.slice(..));
             render_pass.set_index_buffer(
                 self.square_index_buffer.slice(..),

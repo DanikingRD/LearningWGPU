@@ -1,3 +1,9 @@
+struct CameraUniform {
+    proj: mat4x4<f32>,
+};
+@group(1) @binding(0)
+var<uniform> camera: CameraUniform;
+
 struct VInput {
     @location(0) pos: vec3<f32>,
     @location(1) uv: vec2<f32>
@@ -11,8 +17,8 @@ struct VOutput {
 @vertex
 fn vertex_main(input: VInput) -> VOutput {
     var out: VOutput;
-    out.vertices = vec4<f32>(input.pos, 1.0);
     out.uv = input.uv;
+    out.vertices = camera.proj * vec4<f32>(input.pos, 1.0);
     return out;
 }
 

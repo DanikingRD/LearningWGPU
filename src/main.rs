@@ -31,7 +31,7 @@ async fn run() {
         match event {
             Event::RedrawRequested(id) => {
                 if id == window.id() {
-                    state.update();
+                    state.update(&window);
                     match state.render() {
                         Ok(_) => {}
                         // Reconfigure the surface if lost
