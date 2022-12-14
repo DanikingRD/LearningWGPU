@@ -1,34 +1,23 @@
-use cgmath::{vec3, Matrix4, Vector3};
+use cgmath::{Deg, Vector3, vec3, Matrix4, vec4};
 use winit::window::Window;
 
 pub struct Camera {
-    // eye: cgmath::Point3<f32>,
-    // target: cgmath::Point3<f32>,
-    // up: cgmath::Vector3<f32>,
-    // aspect: f32,
-    // fovy: f32,
-    // znear: f32,
-    // zfar: f32,
-    pub eye: cgmath::Point3<f32>,
-    pub target: cgmath::Point3<f32>,
-    pub up: cgmath::Vector3<f32>,
+    /// Field Of View in degress
+    pub fov: f32,
+    /// Aspect Ratio
+    pub ratio: f32,
+    // Z near distance
+    pub znear: f32,
+    // Z far distance
+    pub zfar: f32,
 }
 
 impl Camera {
     fn build_view_proj(&self, window: &Window) -> cgmath::Matrix4<f32> {
+        let translation = vec3(0.0, 0.0, 3.0);
         let size = window.inner_size();
-        let w = size.width;
-        let h = size.height;
-        let w_ratio = w as f32 / 100.0;
-        let h_ratio = h as f32 / 100.0;
-        let proj2 =
-            OPENGL_TO_WGPU_MATRIX * cgmath::ortho(-w_ratio, w_ratio, -h_ratio, h_ratio, -1.0, 1.0);
-        let aspect = w as f32 / h as f32;
-        let fovy = 45.0;
-        let znear = 0.1;
-        let zfar = 100.;
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        let proj = cgmath::perspective(cgmath::Deg(fovy), aspect, znear, zfar);
+        let proj = cgmath::perspective(Deg(self.fov), self.ratio, self.znear, self.zfar);
+        let view = Matrix4::from_translation(translation);
         return OPENGL_TO_WGPU_MATRIX * proj * view;
     }
 }

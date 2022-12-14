@@ -143,9 +143,10 @@ impl State {
             label: Some("dirt_bind_group"),
         });
         let camera = Camera {
-            eye: cgmath::point3(0.0, 1.0, 2.0),
-            target: cgmath::point3(0.0, 0.0, 0.0),
-            up: cgmath::Vector3::unit_y(),
+            fov: 45.0,
+            ratio: size.width as f32 / size.height as f32,
+            znear: 0.1,
+            zfar: 100.0,
         };
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &window);
