@@ -8,6 +8,7 @@ use winit::{
 
 use crate::{
     camera::{Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX},
+    controller::CameraController,
     texture,
     vertex::{TextureLoad, Vertex, SQUARE_INDICES, SQUARE_VERTICES},
 };
@@ -31,6 +32,7 @@ pub struct State {
     camera_bind_group: wgpu::BindGroup,
     camera_uniform: CameraUniform,
     camera: Camera,
+    controller: CameraController,
 }
 
 impl State {
@@ -140,8 +142,11 @@ impl State {
             ],
             label: Some("dirt_bind_group"),
         });
-        let move_right = cgmath::vec3(-100, 0, 0);
-        let camera = Camera::new(cgmath::point3(0.0, 0.0, 0.0));
+        let camera = Camera {
+            eye: cgmath::point3(0.0, 1.0, 2.0),
+            target: cgmath::point3(0.0, 0.0, 0.0),
+            up: cgmath::Vector3::unit_y(),
+        };
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &window);
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -234,6 +239,7 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
         let texture_load = TextureLoad::TREE;
+        let controller = CameraController::new(0.1);
         Self {
             surface,
             device,
@@ -253,6 +259,7 @@ impl State {
             camera_buffer,
             camera_uniform,
             camera,
+            controller,
         }
     }
 
@@ -293,13 +300,14 @@ impl State {
                 TextureLoad::DIRT => TextureLoad::TREE,
             };
         }
+        self.controller.process_events(event);
         false
     }
 
     pub fn update(&mut self, window: &Window) {
         let w_aspect_ratio = (self.get_size().width as f32) / 100.0;
         let h_aspect_ratio = (self.get_size().height as f32) / 100.0;
-     
+        self.controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera, window);
         self.queue.write_buffer(
             &self.camera_buffer,
