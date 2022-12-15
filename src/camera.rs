@@ -1,7 +1,10 @@
-use cgmath::{Deg, Vector3, vec3, Matrix4, vec4};
+use cgmath::{Deg, Vector3, Point3, Matrix4};
 use winit::window::Window;
 
 pub struct Camera {
+    pub eye: Point3<f32>,
+    pub up: Vector3<f32>,
+    pub target: Point3<f32>,
     /// Field Of View in degress
     pub fov: f32,
     /// Aspect Ratio
@@ -14,11 +17,9 @@ pub struct Camera {
 
 impl Camera {
     fn build_view_proj(&self, window: &Window) -> cgmath::Matrix4<f32> {
-        let translation = vec3(0.0, 0.0, 3.0);
-        let size = window.inner_size();
-        let proj = cgmath::perspective(Deg(self.fov), self.ratio, self.znear, self.zfar);
-        let view = Matrix4::from_translation(translation);
-        return OPENGL_TO_WGPU_MATRIX * proj * view;
+        let view = Matrix4::look_at_rh(self.eye, self.target, self.up);
+        let projection = cgmath::perspective(Deg(self.fov), self.ratio, self.znear, self.zfar);
+        return OPENGL_TO_WGPU_MATRIX * projection * view;
     }
 }
 

@@ -10,6 +10,7 @@ mod controller;
 mod state;
 mod texture;
 mod vertex;
+mod instance;
 const MIN_WINDOW_SIZE: PhysicalSize<i32> = PhysicalSize::new(400, 400);
 
 fn main() {

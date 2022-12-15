@@ -1,4 +1,4 @@
-use cgmath::SquareMatrix;
+use cgmath::{SquareMatrix, vec3, point3};
 use image::GenericImageView;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -10,7 +10,7 @@ use crate::{
     camera::{Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX},
     controller::CameraController,
     texture,
-    vertex::{TextureLoad, Vertex, SQUARE_INDICES, SQUARE_VERTICES},
+    vertex::{TextureLoad, Vertex, SQUARE_INDICES, SQUARE_VERTICES}, instance::{Instance, InstanceRaw},
 };
 
 pub struct State {
@@ -33,6 +33,8 @@ pub struct State {
     camera_uniform: CameraUniform,
     camera: Camera,
     controller: CameraController,
+    instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -143,6 +145,9 @@ impl State {
             label: Some("dirt_bind_group"),
         });
         let camera = Camera {
+            eye: point3(0.0, 0.0, 5.0),
+            up: vec3(0.0, 1.0, 0.0),
+            target: point3(0.0, 0.0, -1.0),
             fov: 45.0,
             ratio: size.width as f32 / size.height as f32,
             znear: 0.1,
@@ -150,6 +155,9 @@ impl State {
         };
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &window);
+
+        let controller = CameraController::new(0.01);
+
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
             contents: bytemuck::cast_slice(&[camera_uniform]),
@@ -197,7 +205,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vertex_main",
-                buffers: &[Vertex::desc()],
+                buffers: &[Vertex::desc(), InstanceRaw::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -240,7 +248,36 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
         let texture_load = TextureLoad::TREE;
-        let controller = CameraController::new(0.1);
+        const INSTANCES_PER_ROW: u32 = 10;
+        use cgmath::prelude::*;
+        const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(INSTANCES_PER_ROW as f32 * 0.7, 0.0, INSTANCES_PER_ROW as f32 * 0.5);
+        let instances = (0..INSTANCES_PER_ROW).flat_map(|z| {
+            (0..INSTANCES_PER_ROW).map(move |x| {
+                let pos = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+
+                let rot = if pos.is_zero() {
+                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                    // as Quaternions can effect scale if they're not created correctly
+                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+                } else {
+                    cgmath::Quaternion::from_axis_angle(pos.normalize(), cgmath::Deg(45.0))
+                };
+
+                Instance {
+                    pos,
+                    rot,
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );     
         Self {
             surface,
             device,
@@ -261,6 +298,8 @@ impl State {
             camera_uniform,
             camera,
             controller,
+            instances,
+            instance_buffer,
         }
     }
 
@@ -290,7 +329,7 @@ impl State {
             input:
                 KeyboardInput {
                     state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::Space),
+                    virtual_keycode: Some(VirtualKeyCode::F),
                     ..
                 },
             ..
@@ -353,11 +392,13 @@ impl State {
             }
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.square_vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+
             render_pass.set_index_buffer(
                 self.square_index_buffer.slice(..),
                 wgpu::IndexFormat::Uint16,
             );
-            render_pass.draw_indexed(0..SQUARE_INDICES.len() as u32, 0, 0..1);
+            render_pass.draw_indexed(0..SQUARE_INDICES.len() as u32, 0, 0..self.instances.len() as _);
         }
 
         // submit will accept anything that implements IntoIter
